@@ -1,8 +1,8 @@
 import requests
 import telebot
-import hidden_settings
+from config import ZH_GALLERY_BOT_API_KEY
 
-API_KEY = hidden_settings.API_KEY
+API_KEY = ZH_GALLERY_BOT_API_KEY
 bot = telebot.TeleBot(API_KEY)
 
 clipboard = u'\U0001F4CB'
