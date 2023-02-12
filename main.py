@@ -33,6 +33,9 @@ def cmd_get_image(message):
 
 @bot.message_handler(commands=['random'])
 def random_from_api(message):
+    if str.lower(message.text) == '/stop':
+        stop(message)
+        return
     try:
         request = requests.get(f'https://zh-gallery.ru/api/telegram_bot/get_random_item')
         # request = requests.get(f'http://localhost:8000/api/telegram_bot/get_random_item')
