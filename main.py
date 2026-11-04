@@ -1,100 +1,182 @@
+"""Телеграм-бот zh-gallery.
+
+Присылает случайную работу с сайта или работу по названию. Все запросы идут
+в JSON-API сайта и подписаны заголовком X-Bot-Token — без него API отвечает 403.
+"""
+
+from __future__ import annotations
+
+import html
+import logging
+from urllib.parse import quote
+
 import requests
 import telebot
-from config import ZH_GALLERY_BOT_API_KEY
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-API_KEY = ZH_GALLERY_BOT_API_KEY
-bot = telebot.TeleBot(API_KEY)
+from config import load_settings
 
-clipboard = u'\U0001F4CB'
-heart = u'\U0001F497'
-eyes = u'\U0001F440'
+settings = load_settings()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("zh-gallery-bot")
+
+bot = telebot.TeleBot(settings.bot_token, parse_mode="HTML")
+
+session = requests.Session()
+session.headers.update({"X-Bot-Token": settings.api_token})
+session.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=2,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({"GET"}),
+        )
+    ),
+)
+
+CLIPBOARD = "\U0001F4CB"
+HEART = "\U0001F497"
+EYES = "\U0001F440"
+
+CALLBACK_NOT_FOUND = "Не нашёл такую работу. Попробуй другое название или /stop."
+CALLBACK_ERROR = "Не получилось получить работу, попробуй ещё раз."
+TITLE_PROMPT = (
+    "Напиши название работы, и я пришлю её. Если передумал — /stop."
+)
+ABOUT_TEXT = (
+    "Я показываю работы с галереи zh-gallery.\n"
+    "/random — случайная работа\n"
+    "/image — работа по названию\n"
+    "/stop — прервать диалог"
+)
 
 
-@bot.message_handler(commands=['stop'])
-def stop(message):
-    bot.send_message(message.chat.id, 'Стою...')
+class ApiError(Exception):
+    """API вернуло ошибку или недоступно."""
 
 
-@bot.message_handler(commands=['about'])
-def about(message):
-    bot.send_message(
-        message.chat.id,
-        'Пока я умею только показывать картинки с zh-gallery.ru, но я учусь...'
-    )
+class NotFound(ApiError):
+    """Работы с таким названием нет."""
 
 
-@bot.message_handler(commands=['image'])
-def cmd_get_image(message):
-    send = bot.send_message(
-        message.chat.id, 'Дай мне название картинки с zh-gallery.ru и я пришлю её тебе напиши "stop" для остановки'
-    )
-    bot.register_next_step_handler(send, get_image_from_api)
-
-
-@bot.message_handler(commands=['random'])
-def random_from_api(message):
-    if str.lower(message.text) == '/stop':
-        stop(message)
-        return
+def fetch_json(path: str) -> dict:
+    """Запрос к API сайта. Ошибки — исключениями, чтобы их видно было в логах."""
+    url = f"{settings.api_url}{path}"
     try:
-        request = requests.get(f'https://zh-gallery.ru/api/telegram_bot/get_random_item')
-        # request = requests.get(f'http://localhost:8000/api/telegram_bot/get_random_item')
-        response = request.json()
-        media_item_url = response.get('mediaItemUrl')
-        title = response.get('title')
-        description = response.get('description')
-        likes = response.get('likes')
-        views = response.get('views')
-        text = f'*{title}*\n{clipboard}{description}\n{heart} {likes} {eyes} {views}'
-        bot.send_photo(message.chat.id, media_item_url, caption=text, parse_mode='Markdown')
+        response = session.get(url, timeout=settings.request_timeout)
+    except requests.RequestException as error:
+        log.warning("API недоступно (%s): %s", url, error)
+        raise ApiError from error
 
-    except Exception as error:
-        print(error)
-        send = bot.send_message(message.chat.id, 'Что-то пошло не так, попробуй еще раз...')
-        bot.register_next_step_handler(send, random_from_api)
-
-
-def get_image_from_api(message):
-    if str.lower(message.text) == '/stop':
-        stop(message)
-        return
+    if response.status_code == 404:
+        raise NotFound
+    if response.status_code != 200:
+        log.warning("API вернуло %s (%s)", response.status_code, url)
+        raise ApiError
     try:
-        request = requests.get(f'http://zh-gallery.ru/api/telegram_bot/get_media_item/{message.text}')
-        # request = requests.get(f'http://localhost:8000/api/telegram_bot/get_media_item/{message.text}')
-
-        if request.status_code == 404:
-            send = bot.send_message(message.chat.id, 'Не найдено, попробуй еще раз...')
-            bot.register_next_step_handler(send, get_image_from_api)
-        else:
-            response = request.json()
-            media_item_url = response.get('mediaItemUrl')
-            title = response.get('title')
-            description = response.get('description')
-            likes = response.get('likes')
-            views = response.get('views')
-            text = f'*{title}*\n{clipboard}{description}\n{heart} {likes} {eyes} {views}'
-            bot.send_photo(message.chat.id, media_item_url, caption=text, parse_mode='Markdown')
-
-    except Exception as error:
-        print(error)
-        send = bot.send_message(message.chat.id, 'Что-то пошло не так, попробуй еще раз...')
-        bot.register_next_step_handler(send, get_image_from_api)
+        return response.json()
+    except ValueError as error:
+        log.warning("API вернуло не JSON (%s)", url)
+        raise ApiError from error
 
 
-@bot.message_handler(commands=['stop'])
-def stop(message):
-    bot.send_message(message.chat.id, 'Стою...')
+def get_random_item() -> dict:
+    return fetch_json("/api/telegram_bot/get_random_item/")
 
 
-@bot.message_handler(content_types=['text'])
-def text(message):
-    about(message)
+def get_item_by_title(title: str) -> dict:
+    return fetch_json(f"/api/telegram_bot/get_media_item/{quote(title)}/")
+
+
+def format_caption(item: dict) -> str:
+    """Подпись к фото. HTML — потому что в названиях бывают * и _."""
+    title = html.escape(str(item.get("title") or "Без названия"))
+    description = html.escape(str(item.get("description") or "").strip())
+    likes = item.get("likes", 0)
+    views = item.get("views", 0)
+
+    lines = [f"<b>{title}</b>"]
+    if description:
+        lines.append(f"{CLIPBOARD} {description}")
+    lines.append(f"{HEART} {likes}   {EYES} {views}")
+    return "\n".join(lines)
+
+
+def send_item(chat_id: int, item: dict) -> None:
+    image_url = item.get("mediaItemUrl")
+    if not image_url:
+        raise ApiError
+    bot.send_photo(chat_id, image_url, caption=format_caption(item))
+
+
+@bot.message_handler(commands=["start", "help"])
+def cmd_start(message: telebot.types.Message) -> None:
+    bot.send_message(message.chat.id, ABOUT_TEXT)
+
+
+@bot.message_handler(commands=["about"])
+def cmd_about(message: telebot.types.Message) -> None:
+    bot.send_message(message.chat.id, ABOUT_TEXT)
+
+
+@bot.message_handler(commands=["stop", "cancel"])
+def cmd_stop(message: telebot.types.Message) -> None:
+    # именно так диалог действительно останавливается, а не «висит» дальше
+    bot.clear_step_handler_by_chat_id(message.chat.id)
+    bot.send_message(message.chat.id, "Хорошо, остановился.")
+
+
+@bot.message_handler(commands=["random"])
+def cmd_random(message: telebot.types.Message) -> None:
+    try:
+        send_item(message.chat.id, get_random_item())
+    except ApiError:
+        bot.send_message(message.chat.id, CALLBACK_ERROR)
+
+
+def handle_title(message: telebot.types.Message) -> None:
+    text = (message.text or "").strip()
+    if text.lower() in {"stop", "/stop", "отмена"}:
+        cmd_stop(message)
+        return
+    if not text:
+        bot.send_message(message.chat.id, "Название пустое, напиши ещё раз или /stop.")
+        bot.register_next_step_handler(message, handle_title)
+        return
+
+    try:
+        send_item(message.chat.id, get_item_by_title(text))
+    except NotFound:
+        bot.send_message(message.chat.id, CALLBACK_NOT_FOUND)
+        bot.register_next_step_handler(message, handle_title)
+    except ApiError:
+        bot.send_message(message.chat.id, CALLBACK_ERROR)
+
+
+@bot.message_handler(commands=["image"])
+def cmd_image(message: telebot.types.Message) -> None:
+    prompt = bot.send_message(message.chat.id, TITLE_PROMPT)
+    bot.register_next_step_handler(prompt, handle_title)
+
+
+@bot.message_handler(content_types=["text"])
+def cmd_unknown(message: telebot.types.Message) -> None:
+    bot.send_message(message.chat.id, ABOUT_TEXT)
 
 
 if __name__ == "__main__":
+    log.info("Бот запускается, API: %s", settings.api_url)
     try:
-        bot.infinity_polling(interval=0, timeout=20, allowed_updates=['util.update_types'])
+        bot.infinity_polling(timeout=20, long_polling_timeout=20, allowed_updates=["message"])
     except (KeyboardInterrupt, SystemExit):
-        print("KeyboardInterrupt or exit(), goodbye!")
-    except Exception as e:
-        print(f"Uncaught exception: {e}")
+        log.info("Остановлен вручную")
+    except Exception:
+        log.exception("Неожиданная ошибка, бот упал")
+        raise

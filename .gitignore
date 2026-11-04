@@ -3,4 +3,7 @@
 .idea/
 .env
 bot_log.log
-venv/
+venv/__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
