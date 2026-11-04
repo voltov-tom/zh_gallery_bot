@@ -46,6 +46,12 @@ HEART = "\U0001F497"
 EYES = "\U0001F440"
 
 CALLBACK_NOT_FOUND = "Не нашёл такую работу. Попробуй другое название или /stop."
+CONTACT_MAX_LENGTH = 2000
+CONTACT_PROMPT = "Напиши сообщение для Жени — я перешлю его на почту. Отмена — /stop."
+CONTACT_SENT = "Спасибо! Сообщение отправлено."
+CONTACT_TOO_LONG = f"Слишком длинно, максимум {CONTACT_MAX_LENGTH} символов."
+CONTACT_RATE_LIMITED = "Слишком много сообщений подряд. Подожди минут десять."
+CONTACT_FAILED = "Не получилось отправить сообщение, попробуй позже."
 CALLBACK_ERROR = "Не получилось получить работу, попробуй ещё раз."
 TITLE_PROMPT = (
     "Напиши название работы, и я пришлю её. Если передумал — /stop."
@@ -54,6 +60,7 @@ ABOUT_TEXT = (
     "Я показываю работы с галереи zh-gallery.\n"
     "/random — случайная работа\n"
     "/image — работа по названию\n"
+    "/contact — написать Жене (уйдёт на почту)\n"
     "/stop — прервать диалог"
 )
 
@@ -64,6 +71,10 @@ class ApiError(Exception):
 
 class NotFound(ApiError):
     """Работы с таким названием нет."""
+
+
+class RateLimited(ApiError):
+    """Слишком много сообщений с одного аккаунта."""
 
 
 def fetch_json(path: str) -> dict:
@@ -93,6 +104,23 @@ def get_random_item() -> dict:
 
 def get_item_by_title(title: str) -> dict:
     return fetch_json(f"/api/telegram_bot/get_media_item/{quote(title)}/")
+
+
+def send_contact_message(text: str, telegram_id: int, username: str) -> None:
+    """Отправляет сообщение «Напишите мне» в API сайта — оттуда оно уйдёт на почту."""
+    url = f"{settings.api_url}/api/telegram_bot/send_message/"
+    payload = {"text": text, "telegram_id": telegram_id, "username": username}
+    try:
+        response = session.post(url, json=payload, timeout=settings.request_timeout)
+    except requests.RequestException as error:
+        log.warning("API недоступно (%s): %s", url, error)
+        raise ApiError from error
+
+    if response.status_code == 429:
+        raise RateLimited
+    if response.status_code != 200:
+        log.warning("API вернуло %s (%s)", response.status_code, url)
+        raise ApiError
 
 
 def format_caption(item: dict) -> str:
@@ -158,6 +186,36 @@ def handle_title(message: telebot.types.Message) -> None:
         bot.register_next_step_handler(message, handle_title)
     except ApiError:
         bot.send_message(message.chat.id, CALLBACK_ERROR)
+
+
+def handle_contact_message(message: telebot.types.Message) -> None:
+    text = (message.text or "").strip()
+    if text.lower() in {"stop", "/stop", "отмена"}:
+        cmd_stop(message)
+        return
+    if not text:
+        bot.send_message(message.chat.id, "Сообщение пустое, напиши ещё раз или /stop.")
+        bot.register_next_step_handler(message, handle_contact_message)
+        return
+    if len(text) > CONTACT_MAX_LENGTH:
+        bot.send_message(message.chat.id, CONTACT_TOO_LONG)
+        bot.register_next_step_handler(message, handle_contact_message)
+        return
+
+    username = message.from_user.username or ""
+    try:
+        send_contact_message(text, message.from_user.id, username)
+        bot.send_message(message.chat.id, CONTACT_SENT)
+    except RateLimited:
+        bot.send_message(message.chat.id, CONTACT_RATE_LIMITED)
+    except ApiError:
+        bot.send_message(message.chat.id, CONTACT_FAILED)
+
+
+@bot.message_handler(commands=["contact"])
+def cmd_contact(message: telebot.types.Message) -> None:
+    prompt = bot.send_message(message.chat.id, CONTACT_PROMPT)
+    bot.register_next_step_handler(prompt, handle_contact_message)
 
 
 @bot.message_handler(commands=["image"])
