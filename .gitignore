@@ -3,7 +3,8 @@
 .idea/
 .env
 bot_log.log
-venv/__pycache__/
+venv/
+__pycache__/
 *.pyc
 .venv/
 .pytest_cache/
