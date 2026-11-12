@@ -47,3 +47,23 @@ ZH_GALLERY_BOT_API_KEY=dummy ZH_GALLERY_API_URL=http://localhost:8080 \
 ZH_GALLERY_API_TOKEN=<токен с сайта> \
 python -c "from main import get_random_item, format_caption; print(format_caption(get_random_item()))"
 ```
+
+## Прод
+
+Бот живёт на **NL** (`178.208.66.61`), а не рядом с сайтом: в РФ `api.telegram.org`
+недоступен, с zh-gallery.ru соединение не устанавливается. Сайт и Telegram с NL
+доступны, поэтому бот стоит там.
+
+- образ: `ghcr.io/voltov-tom/zh-gallery-bot:<sha>` (публичный GHCR);
+- стек: `docker-compose.prod.yml`, один контейнер, портов наружу нет (long polling);
+- секреты: `.env` рядом с compose (`600`), в образ не попадают (см. `.dockerignore`);
+- деплой: push в `refactor` → GitHub Actions собирает образ и заходит по SSH
+  пользователем `deploybot`, у которого ключ ограничен forced-command
+  (`status`, `logs`, `deploy <sha>`). Секрет репозитория: `BOT_DEPLOY_SSH_KEY`.
+
+Локальная проверка контейнера:
+
+```bash
+docker build -t zh-bot:test .
+docker run --rm --env-file .env zh-bot:test
+```

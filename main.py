@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import logging
+import signal
 from urllib.parse import quote
 
 import requests
@@ -41,9 +42,9 @@ session.mount(
     ),
 )
 
-CLIPBOARD = "\U0001F4CB"
-HEART = "\U0001F497"
-EYES = "\U0001F440"
+CLIPBOARD = "\U0001f4cb"
+HEART = "\U0001f497"
+EYES = "\U0001f440"
 
 CALLBACK_NOT_FOUND = "Не нашёл такую работу. Попробуй другое название или /stop."
 CONTACT_MAX_LENGTH = 2000
@@ -53,9 +54,7 @@ CONTACT_TOO_LONG = f"Слишком длинно, максимум {CONTACT_MAX_
 CONTACT_RATE_LIMITED = "Слишком много сообщений подряд. Подожди минут десять."
 CONTACT_FAILED = "Не получилось отправить сообщение, попробуй позже."
 CALLBACK_ERROR = "Не получилось получить работу, попробуй ещё раз."
-TITLE_PROMPT = (
-    "Напиши название работы, и я пришлю её. Если передумал — /stop."
-)
+TITLE_PROMPT = "Напиши название работы, и я пришлю её. Если передумал — /stop."
 ABOUT_TEXT = (
     "Я показываю работы с галереи zh-gallery.\n"
     "/random — случайная работа\n"
@@ -229,7 +228,14 @@ def cmd_unknown(message: telebot.types.Message) -> None:
     bot.send_message(message.chat.id, ABOUT_TEXT)
 
 
+def _stop_on_signal(signum, _frame) -> None:
+    """Docker шлёт SIGTERM при перезапуске — выходим из polling штатно."""
+    log.info("Получен сигнал %s — останавливаем бота", signum)
+    bot.stop_polling()
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _stop_on_signal)
     log.info("Бот запускается, API: %s", settings.api_url)
     try:
         bot.infinity_polling(timeout=20, long_polling_timeout=20, allowed_updates=["message"])

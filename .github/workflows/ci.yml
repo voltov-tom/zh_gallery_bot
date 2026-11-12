@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [refactor]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Зависимости
+        run: pip install -r requirements.txt ruff
+
+      - name: ruff
+        run: ruff check . && ruff format --check .
+
+      - name: Импорт без сети
+        env:
+          ZH_GALLERY_BOT_API_KEY: "123456:TEST"
+          ZH_GALLERY_API_TOKEN: test-token
+          ZH_GALLERY_API_URL: https://zh-gallery.ru
+        run: python -c "import main; print('import ok')"

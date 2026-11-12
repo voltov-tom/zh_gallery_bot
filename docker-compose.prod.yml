@@ -1,0 +1,21 @@
+# Прод-стек бота: один контейнер, портов наружу нет (long polling).
+# Образ тянется из GHCR, тег задаётся переменной IMAGE_TAG при деплое.
+name: zh_bot
+
+services:
+  bot:
+    image: ghcr.io/voltov-tom/zh-gallery-bot:${IMAGE_TAG:-latest}
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
