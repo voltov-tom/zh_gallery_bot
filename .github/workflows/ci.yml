@@ -4,6 +4,8 @@ on:
   push:
     branches: [refactor]
   pull_request:
+  # вызывается из deploy.yml как переиспользуемый workflow
+  workflow_call:
 
 jobs:
   lint:
