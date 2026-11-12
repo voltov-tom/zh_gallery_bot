@@ -1,8 +1,10 @@
 name: Deploy
 
 # Собирает образ бота, публикует в GHCR и деплоит на сервер по SSH.
-# Требует секрет BOT_DEPLOY_SSH_KEY — приватный ключ пользователя deploybot
-# на NL; на сервере ключ ограничен forced-command (только status/logs/deploy).
+# Требует секрет BOT_DEPLOY_SSH_KEY — приватный ключ пользователя deploy
+# на zh-gallery.ru. На сервере ключ ограничен forced-command: разрешены
+# только status, logs web, deploy <sha> и bot status/logs bot/deploy <sha>
+# (см. deploy/ops/zhctl-root и zhbotctl-root в репозитории сайта).
 
 on:
   push:
@@ -64,5 +66,5 @@ jobs:
           chmod 600 ~/.ssh/bot_deploy_key
 
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
-              -p 10022 -i ~/.ssh/bot_deploy_key deploybot@178.208.66.61 \
-              "deploy ${{ github.sha }}"
+              -p 10022 -i ~/.ssh/bot_deploy_key deploy@zh-gallery.ru \
+              "bot deploy ${{ github.sha }}"

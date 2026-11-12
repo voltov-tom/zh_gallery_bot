@@ -1,3 +1,4 @@
 pyTelegramBotAPI~=4.37
 requests~=2.34
 python-dotenv~=1.2
+PySocks~=1.7

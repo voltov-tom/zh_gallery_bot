@@ -55,7 +55,8 @@ python -c "from main import get_random_item, format_caption; print(format_captio
 доступны, поэтому бот стоит там.
 
 - образ: `ghcr.io/voltov-tom/zh-gallery-bot:<sha>` (публичный GHCR);
-- стек: `docker-compose.prod.yml`, один контейнер, портов наружу нет (long polling);
+- стек: `deploy/bot/docker-compose.prod.yml` в репозитории сайта (бот и sidecar xray),
+  портов наружу нет: Telegram в РФ недоступен, трафик бота идёт через VLESS на KZ;
 - секреты: `.env` рядом с compose (`600`), в образ не попадают (см. `.dockerignore`);
 - деплой: push в `refactor` → GitHub Actions собирает образ и заходит по SSH
   пользователем `deploybot`, у которого ключ ограничен forced-command
