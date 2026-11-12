@@ -136,11 +136,38 @@ def format_caption(item: dict) -> str:
     return "\n".join(lines)
 
 
+def fetch_image(url: str) -> bytes:
+    """Скачивает картинку самим ботом.
+
+    Telegram не смог забрать файл по URL с нашего домена (в логах nginx нет
+    ни одного запроса от него), а бот до сайта достаёт — поэтому отправляем
+    уже скачанные байты.
+    """
+    try:
+        response = session.get(url, timeout=settings.request_timeout)
+    except requests.RequestException as error:
+        log.warning("Не удалось скачать картинку %s: %s", url, error)
+        raise ApiError from error
+
+    if response.status_code != 200:
+        log.warning("Картинка %s вернула %s", url, response.status_code)
+        raise ApiError
+    return response.content
+
+
 def send_item(chat_id: int, item: dict) -> None:
     image_url = item.get("mediaItemUrl")
     if not image_url:
         raise ApiError
-    bot.send_photo(chat_id, image_url, caption=format_caption(item))
+
+    try:
+        photo = fetch_image(image_url)
+    except ApiError:
+        # без картинки, но с ссылкой — лучше, чем молчание
+        bot.send_message(chat_id, f"{CALLBACK_ERROR}\n{image_url}")
+        return
+
+    bot.send_photo(chat_id, photo, caption=format_caption(item))
 
 
 @bot.message_handler(commands=["start", "help"])
